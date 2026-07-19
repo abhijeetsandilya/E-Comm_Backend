@@ -11,9 +11,11 @@ class product(Base):
     __tablename__= "Product"
 
     prod_id = Column(Integer, primary_key= True)
+    stock = Column(Integer, nullable=False)
     prod_name = Column(String)
-    seller_id = Column(Integer)
-
+    seller_id = Column(Integer, nullable=False, unique=True)
+    Current_price =  Column(Float, nullable=False)
+    
 class cart(Base):
     __tablename__ = "Cart"
 
@@ -25,6 +27,7 @@ class CartItem(Base):
     __tablename__ = "Cart_items"
 
     cart_item_id = Column(Integer, primary_key= True)
+    user_id = Column(Integer, ForeignKey("User_details.user_id"))
     prod_id = Column(Integer, ForeignKey("Product.prod_id"))
     cart_id = Column(Integer, ForeignKey("Cart.cart_id"))
     quantity = Column(Integer)
@@ -42,6 +45,7 @@ class orderItem(Base):
     __tablename__ = "Ordered_item"
 
     order_item_id = Column(Integer, primary_key= True)
+    user_id = Column(Integer, ForeignKey("User_details.user_id"))
     order_id = Column(Integer, ForeignKey("Orders.order_id"))
     prod_id = Column(Integer, ForeignKey("Product.prod_id"))
     quantity = Column(Integer)
