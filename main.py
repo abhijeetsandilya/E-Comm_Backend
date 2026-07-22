@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, UTC
 from fastapi import FastAPI, Depends, HTTPException, Response
 from database import engine, sessionLocal
 import database_model as db_mdl
@@ -115,7 +115,7 @@ async def view_cart(user_id: int, db: Session = Depends(get_db)):
     return cart
 
 @app.post("/order", status_code=201)
-async def buy(prod_id: int, quantity: int, user_id: int, db: Session = Depends(get_db)):
+async def buy(prod_id: int, quantity: int, user_id: int, address_id: int, db: Session = Depends(get_db)):
 
     if quantity <= 0:
         raise HTTPException(status_code=400,detail="Quantity must be greater than 0")
@@ -123,19 +123,43 @@ async def buy(prod_id: int, quantity: int, user_id: int, db: Session = Depends(g
     try:
         product = db.query(db_mdl.product).filter(db_mdl.product.prod_id == prod_id).with_for_update().first()
 
+        address = (db.query(db_mdl.address).filter(db_mdl.address.address_id == address_id,db_mdl.address.user_id == user_id).first())
+
+        user = db.query(db_mdl.user).filter(
+        db_mdl.user.user_id == user_id).first()
+
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if address is None:
+            raise HTTPException(status_code=404, detail="Address not found.")
+
         if product is None:
             raise HTTPException(status_code=404,detail="Product not found")
 
         if quantity > product.stock:
-            raise HTTPException(status_code=400, detail="Requested quantity exceeds available stock :( ")
+            raise HTTPException(status_code=409, detail="Requested quantity exceeds available stock :( ")
 
-        new_order = db_mdl.order(prod_id = prod_id, quantity = quantity,
-                                user_id = user_id, total_price = product.Current_price * quantity,
-                                order_status="Placed",ordered_at=datetime.utcnow())
+        new_order = db_mdl.order(user_id = user_id, total_price = product.Current_price * quantity,
+                                order_status="Placed",ordered_at=datetime.now(UTC))
         
         db.add(new_order)
-
         db.flush()
+        
+        new_order_address = db_mdl.orderAddress(
+    order_id=new_order.order_id,
+    name=address.name,
+    phone=address.phone,
+    address_line1=address.address_line1,
+    address_line2=address.address_line2,
+    city=address.city,
+    state=address.state,
+    pincode=address.pincode)
+        
+        
+        db.add(new_order_address)
+
+        
 
         new_item = db_mdl.orderItem(
             order_id=new_order.order_id,
@@ -156,7 +180,7 @@ async def buy(prod_id: int, quantity: int, user_id: int, db: Session = Depends(g
 
         return {
         "message": "Order placed successfully",
-        "order_id": new_order.order_id
+        "order_id": new_order.order_id, "total_price": new_order.total_price
     }
     except HTTPException:
         db.rollback()
@@ -213,10 +237,8 @@ async def cancel_order(order_id: int, user_id: int, db: Session = Depends(get_db
                 detail="Product not found"
             )
 
-        # Restore stock
         product.stock += item.quantity
 
-        # Cancel order
         order.order_status = "Cancelled"
 
         db.commit()
@@ -229,7 +251,4 @@ async def cancel_order(order_id: int, user_id: int, db: Session = Depends(get_db
 
     except SQLAlchemyError:
         db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Database error occurred"
-        )
+        raise HTTPException(status_code=500,detail="Database error occurred")

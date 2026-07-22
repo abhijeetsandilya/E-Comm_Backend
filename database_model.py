@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Float, ForeignKey, Boolean
 from database import Base
 
 class user(Base):
@@ -6,6 +6,7 @@ class user(Base):
 
     user_id = Column(Integer, primary_key= True)
     user_mail = Column(String)
+    username = Column(String)
 
 class product(Base):
     __tablename__= "Product"
@@ -50,3 +51,29 @@ class orderItem(Base):
     prod_id = Column(Integer, ForeignKey("Product.prod_id"))
     quantity = Column(Integer)
     price = Column(Integer)
+
+class orderAddress(Base):
+    __tablename__ = "Order_address"
+
+    order_id = Column(Integer, ForeignKey("Orders.order_id"), primary_key=True)
+    name = Column(String, nullable=False)
+    phone = Column(String(10), nullable=False)
+    address_line1 = Column(String, nullable=False)
+    address_line2 = Column(String, nullable=False)
+    city = Column(String, nullable=False)
+    state = Column(String, nullable=False)
+    pincode = Column(String(6), nullable=False)
+
+class address(Base):
+    __tablename__ = "Address"
+
+    address_id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("User_details.user_id"))
+    name = Column(String, nullable=False)
+    phone = Column(String(10), nullable=False)
+    address_line1 = Column(String, nullable=False)
+    address_line2 = Column(String, nullable=False)
+    city = Column(String, nullable=False)
+    state = Column(String, nullable=False)
+    pincode = Column(String(6), nullable=False)
+    is_default = Column(Boolean, nullable=False, default=False)
