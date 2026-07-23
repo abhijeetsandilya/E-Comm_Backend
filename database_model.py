@@ -7,6 +7,17 @@ class user(Base):
     user_id = Column(Integer, primary_key= True)
     user_mail = Column(String)
     username = Column(String)
+    user_number = Column(String(10))
+    is_blocked = Column(Boolean, default=False)
+
+class seller(Base):
+    __tablename__ = "Seller_details"
+
+    seller_id = Column(Integer, primary_key=True)
+    seller_name = Column(String)
+    seller_mail = Column(String, nullable=False, unique=True)
+    seller_number = Column(String(10))
+    is_blocked = Column(Boolean, default=False)
 
 class product(Base):
     __tablename__= "Product"
@@ -14,7 +25,7 @@ class product(Base):
     prod_id = Column(Integer, primary_key= True)
     stock = Column(Integer, nullable=False)
     prod_name = Column(String)
-    seller_id = Column(Integer, nullable=False, unique=True)
+    seller_id = Column(Integer, ForeignKey("Seller_details.seller_id"))
     Current_price =  Column(Float, nullable=False)
     
 class cart(Base):
