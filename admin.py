@@ -18,7 +18,7 @@ def get_db():
         db.close()
 
 @app.post("/admin/products", status_code=200)
-def create_prod(prod_id: int, quantity: int, seller_id: int, price: int ,prod_name: str , db: Session = Depends(get_db)):
+def create_prod(prod_id: int, quantity: int, seller_id: int, price: float ,prod_name: str , db: Session = Depends(get_db)):
     try:
         if quantity <= 0:
                 raise HTTPException(status_code=400,detail="Quantity must be greater than 0")
