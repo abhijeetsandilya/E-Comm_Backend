@@ -252,3 +252,159 @@ async def cancel_order(order_id: int, user_id: int, db: Session = Depends(get_db
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(status_code=500,detail="Database error occurred")
+
+@app.get("/address", status_code=200)
+async def addresses(user_id : int, db: Session = Depends(get_db)):
+  
+    add = db.query(db_mdl.address).filter(user_id = user_id).all()
+
+    if add is None:
+        raise HTTPException(status_code=404, detail="Address not found")
+
+    return add
+
+@app.get("/address/{address_id}", status_code=200)
+async def get_address(address_id : int, db: Session = Depends(get_db)):
+
+    add = db.query(db_mdl.address).filter(address_id = address_id).first()
+
+    if add is None:
+        raise HTTPException(status_code=404, detail="Address not found")
+
+    return add
+
+@app.post("/addresses", status_code=201)
+def create_address(
+    user_id: int,
+    name: str,
+    phone: str,
+    city: str,
+    state: str,
+    pincode: str,
+    address_line1: str,
+    address_line2: str | None = None,
+    is_default: bool = False,        #default parameters are placed at the end, after the non-default parameters
+    db: Session = Depends(get_db)
+):
+
+    user = db.query(db_mdl.user).filter(
+        db_mdl.user.user_id == user_id
+    ).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if is_default:
+        db.query(db_mdl.address).filter(
+            db_mdl.address.user_id == user_id,
+            db_mdl.address.is_default == True
+        ).update({"is_default": False})
+
+    new_address = db_mdl.address(
+        user_id=user_id,
+        name=name,
+        phone=phone,
+        address_line1=address_line1,
+        address_line2=address_line2,
+        city=city,
+        state=state,
+        pincode=pincode,
+        is_default=is_default
+    )
+
+    db.add(new_address)
+    db.commit()
+    db.refresh(new_address)
+
+    return new_address
+
+@app.patch("/addresses/{address_id}")
+def update_address(
+    address_id: int,
+    user_id: int,
+    name: str | None = None,
+    phone: str | None = None,
+    address_line1: str | None = None,
+    address_line2: str | None = None,
+    city: str | None = None,
+    state: str | None = None,
+    pincode: str | None = None,
+    is_default: bool | None = None,
+    db: Session = Depends(get_db)
+):
+
+    address = db.query(db_mdl.address).filter(
+        db_mdl.address.address_id == address_id,
+        db_mdl.address.user_id == user_id
+    ).first()
+
+    if not address:
+        raise HTTPException(status_code=404, detail="Address not found")
+
+    if name is not None:
+        address.name = name
+
+    if phone is not None:
+        address.phone = phone
+
+    if address_line1 is not None:
+        address.address_line1 = address_line1
+
+    if address_line2 is not None:
+        address.address_line2 = address_line2
+
+    if city is not None:
+        address.city = city
+
+    if state is not None:
+        address.state = state
+
+    if pincode is not None:
+        address.pincode = pincode
+
+    if is_default is not None:
+
+        if is_default:
+            db.query(db_mdl.address).filter(
+                db_mdl.address.user_id == user_id,
+                db_mdl.address.address_id != address_id
+            ).update({"is_default": False})
+
+        address.is_default = is_default
+
+    db.commit()
+    db.refresh(address)
+
+    return address
+
+@app.delete("/addresses/{address_id}", status_code=204)
+def delete_address(
+    address_id: int,
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+
+    address = db.query(db_mdl.address).filter(
+        db_mdl.address.address_id == address_id,
+        db_mdl.address.user_id == user_id
+    ).first()
+
+    if not address:
+        raise HTTPException(404, "Address not found")
+
+    was_default = address.is_default
+
+    db.delete(address)
+    db.commit()
+
+    if was_default:
+        new_default = (
+            db.query(db_mdl.address)
+            .filter(db_mdl.address.user_id == user_id)
+            .first()
+        )
+
+    if new_default:
+        new_default.is_default = True
+        db.commit()
+

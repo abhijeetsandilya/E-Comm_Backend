@@ -67,10 +67,28 @@ class OrderResponse(BaseModel):
     total_price : float
     
 class AddressCreate(BaseModel):
-    ...
+    user_id: int
+    name: str
+    phone: str
+    city: str
+    state: str
+    pincode: str
+    address_line1: str
+    address_line2: str | None = None
+    is_default: bool = False
 
 class AddressUpdate(BaseModel):
-    ...
+    address_id: int
+    user_id: int
+    name: str | None = None
+    phone: str | None = None
+    city: str | None = None
+    state: str | None = None
+    pincode: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    is_default: bool | None = False
 
 class AddressOut(BaseModel):
-    ...
+    message: str
+    address_id: int
