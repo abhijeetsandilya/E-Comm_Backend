@@ -26,7 +26,7 @@ class product(Base):
     stock = Column(Integer, nullable=False)
     prod_name = Column(String)
     seller_id = Column(Integer, ForeignKey("Seller_details.seller_id"))
-    Current_price =  Column(Float, nullable=False)
+    current_price =  Column(Float, nullable=False)
     
 class cart(Base):
     __tablename__ = "Cart"

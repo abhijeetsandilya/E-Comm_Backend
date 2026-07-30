@@ -25,7 +25,7 @@ def create_prod(prod_id: int, quantity: int, seller_id: int, price: float ,prod_
 
         prod = db.query(db_mdl.product).filter(db_mdl.product.prod_id == prod_id).first()
 
-        seller = prod = db.query(db_mdl.product).filter(db_mdl.product.seller_id == seller_id).first()
+        seller = db.query(db_mdl.seller).filter(db_mdl.seller.seller_id == seller_id).first()
 
         if prod is not None:
             raise HTTPException(status_code=400, detail="Product id already exists")
@@ -72,7 +72,7 @@ def get_product(prod_id: int, db: Session = Depends(get_db)):
 
     return product
 
-@app.patch("/admin/products/{prod_id}")
+@app.patch("/admin/products/")
 def update_product(prod_id: int, prod_name: str = None,price: float = None,seller_id: int = None,db: Session = Depends(get_db)):
     try:
 
@@ -495,32 +495,6 @@ def get_seller(seller_id: int,db: Session = Depends(get_db)):
     products = db.query(db_mdl.product).filter(db_mdl.product.seller_id == seller_id).all()
 
     return {"seller": seller, "products": products}
-
-
-@app.get("/admin/sellers/{seller_id}")
-def get_seller(
-    seller_id: int,
-    db: Session = Depends(get_db)
-):
-
-    seller = db.query(db_mdl.seller).filter(
-        db_mdl.seller.seller_id == seller_id
-    ).first()
-
-    if seller is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Seller not found"
-        )
-
-    products = db.query(db_mdl.product).filter(
-        db_mdl.product.seller_id == seller_id
-    ).all()
-
-    return {
-        "seller": seller,
-        "products": products
-    }
 
 @app.patch("/admin/sellers/{seller_id}/block")
 def block_seller(

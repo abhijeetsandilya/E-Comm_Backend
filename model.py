@@ -10,7 +10,6 @@ class UserLogin(BaseModel):
     username : str
     password : str
     user_mail : str
-    user_id : int
 
 class UserResponse(BaseModel):
     username : str
@@ -87,6 +86,7 @@ class AddressUpdate(BaseModel):
     pincode: str | None = None
     address_line1: str | None = None
     address_line2: str | None = None
+    landmark: str | None = None
     is_default: bool | None = False
 
 class AddressOut(BaseModel):

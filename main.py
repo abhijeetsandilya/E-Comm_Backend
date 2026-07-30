@@ -48,7 +48,7 @@ async def add_to_cart(prod_id: int, quantity: int, user_id: int, db: Session = D
         if product is None:
             raise HTTPException(status_code=404,detail="Product not found")    
         
-        item = db.query(db_mdl.CartItem).filter(db_mdl.CartItem.prod_id == prod_id, db_mdl.CartItem.user_id == user_id).first()
+        item = db.query(db_mdl.CartItem).filter(db_mdl.CartItem.prod_id == prod_id, db_mdl.CartItem.user_id == user_id).all()
 
         if item is None:
             new_item = db_mdl.CartItem(prod_id = prod_id, quantity = quantity, user_id = user_id)
@@ -76,8 +76,6 @@ async def add_to_cart(prod_id: int, quantity: int, user_id: int, db: Session = D
             status_code=500,
             detail="Database error"
         )
-        
-
 
 @app.delete("/cart/{prod_id}")
 async def remove_from_cart(prod_id: int, user_id: int, db: Session = Depends(get_db)):
@@ -141,20 +139,20 @@ async def buy(prod_id: int, quantity: int, user_id: int, address_id: int, db: Se
             raise HTTPException(status_code=409, detail="Requested quantity exceeds available stock :( ")
 
         new_order = db_mdl.order(user_id = user_id, total_price = product.Current_price * quantity,
-                                order_status="Placed",ordered_at=datetime.now(UTC))
+                                order_status="Pending",ordered_at=datetime.now(UTC))
         
         db.add(new_order)
         db.flush()
         
         new_order_address = db_mdl.orderAddress(
-    order_id=new_order.order_id,
-    name=address.name,
-    phone=address.phone,
-    address_line1=address.address_line1,
-    address_line2=address.address_line2,
-    city=address.city,
-    state=address.state,
-    pincode=address.pincode)
+        order_id=new_order.order_id,
+        name=address.name,
+        phone=address.phone,
+        address_line1=address.address_line1,
+        address_line2=address.address_line2,
+        city=address.city,
+        state=address.state,
+        pincode=address.pincode)
         
         
         db.add(new_order_address)
@@ -256,7 +254,7 @@ async def cancel_order(order_id: int, user_id: int, db: Session = Depends(get_db
 @app.get("/address", status_code=200)
 async def addresses(user_id : int, db: Session = Depends(get_db)):
   
-    add = db.query(db_mdl.address).filter(user_id = user_id).all()
+    add = db.query(db_mdl.address).filter(db_mdl.address.user_id == user_id).all()
 
     if add is None:
         raise HTTPException(status_code=404, detail="Address not found")
@@ -266,7 +264,7 @@ async def addresses(user_id : int, db: Session = Depends(get_db)):
 @app.get("/address/{address_id}", status_code=200)
 async def get_address(address_id : int, db: Session = Depends(get_db)):
 
-    add = db.query(db_mdl.address).filter(address_id = address_id).first()
+    add = db.query(db_mdl.address).filter(db_mdl.address.address_id == address_id).first()
 
     if add is None:
         raise HTTPException(status_code=404, detail="Address not found")
@@ -326,6 +324,7 @@ def update_address(
     phone: str | None = None,
     address_line1: str | None = None,
     address_line2: str | None = None,
+    landmark: str | None = None,
     city: str | None = None,
     state: str | None = None,
     pincode: str | None = None,
@@ -352,6 +351,9 @@ def update_address(
 
     if address_line2 is not None:
         address.address_line2 = address_line2
+
+    if landmark is not None:
+        address.landmark = landmark
 
     if city is not None:
         address.city = city
@@ -396,6 +398,8 @@ def delete_address(
 
     db.delete(address)
     db.commit()
+
+    new_default = None
 
     if was_default:
         new_default = (
