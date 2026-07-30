@@ -4,6 +4,7 @@ import database_model as db_mdl
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import func
+import model as mdl
 
 db_mdl.Base.metadata.create_all(bind=engine)
 
@@ -17,15 +18,15 @@ def get_db():
     finally:
         db.close()
 
-@app.post("/admin/products", status_code=200)
-def create_prod(prod_id: int, quantity: int, seller_id: int, price: float ,prod_name: str , db: Session = Depends(get_db)):
+@app.post("/admin/products", status_code=200, response_model=mdl.ProductOut)
+def create_prod(product : mdl.ProductCreate , db: Session = Depends(get_db)):
     try:
-        if quantity <= 0:
+        if product.quantity <= 0:
                 raise HTTPException(status_code=400,detail="Quantity must be greater than 0")
 
-        prod = db.query(db_mdl.product).filter(db_mdl.product.prod_id == prod_id).first()
+        prod = db.query(db_mdl.product).filter(db_mdl.product.prod_id == product.prod_id).first()
 
-        seller = db.query(db_mdl.seller).filter(db_mdl.seller.seller_id == seller_id).first()
+        seller = db.query(db_mdl.seller).filter(db_mdl.seller.seller_id == product.seller_id).first()
 
         if prod is not None:
             raise HTTPException(status_code=400, detail="Product id already exists")
@@ -33,13 +34,15 @@ def create_prod(prod_id: int, quantity: int, seller_id: int, price: float ,prod_
         if seller is None:
                     raise HTTPException(status_code=404, detail="Seller not Found")
 
-        new_prod = db_mdl.product(prod_id = prod_id, stock = quantity, prod_name = prod_name, seller_id = seller_id, current_price = price)
+        new_prod = db_mdl.product(prod_id = product.prod_id, stock = product.quantity, prod_name = product.prod_name, seller_id = product.seller_id, current_price = product.price)
 
         db.add(new_prod)
         db.commit()
         db.refresh(new_prod)
 
-        return {"message": "Product created", "product_id":new_prod.prod_id}       
+        return mdl.ProductOut(
+        message="Product created",
+        prod_id=new_prod.prod_id)       
 
     except HTTPException:
         db.rollback()
@@ -63,17 +66,23 @@ def products(db: Session = Depends(get_db)):
         "products": products
     }
 
-@app.get("/admin/products/{prod_id}")
+@app.get("/admin/products/{prod_id}", response_model=mdl.ProductResponse)
 def get_product(prod_id: int, db: Session = Depends(get_db)):
     product = db.query(db_mdl.product).filter(db_mdl.product.prod_id == prod_id).first()
 
     if product is None:
         raise HTTPException(status_code=404,detail="Product not found")
 
-    return product
+    return mdl.ProductResponse(
+        prod_id=product.prod_id,
+        stock=product.stock,
+        prod_name=product.prod_name,
+        seller_id=product.seller_id,
+        current_price=product.current_price
+    )
 
-@app.patch("/admin/products/")
-def update_product(prod_id: int, prod_name: str = None,price: float = None,seller_id: int = None,db: Session = Depends(get_db)):
+@app.patch("/admin/products/{prod_id}")
+def update_product(prod_id: int, update: mdl.ProductUpdate, db: Session = Depends(get_db)):
     try:
 
         product = db.query(db_mdl.product).filter(db_mdl.product.prod_id == prod_id).first()
@@ -81,23 +90,23 @@ def update_product(prod_id: int, prod_name: str = None,price: float = None,selle
         if product is None:
             raise HTTPException(status_code=404,detail="Product not found")
 
-        if prod_name is not None:
-            product.prod_name = prod_name
+        if update.prod_name is not None:
+            product.prod_name = update.prod_name
 
-        if price is not None:
+        if update.price is not None:
 
-            if price <= 0:
+            if update.price <= 0:
                 raise HTTPException(
                     status_code=400,
                     detail="Invalid price"
                 )
 
-            product.Current_price = price
+            product.current_price = update.price
 
-        if seller_id is not None:
+        if update.seller_id is not None:
 
             seller = db.query(db_mdl.seller).filter(
-                db_mdl.seller.seller_id == seller_id
+                db_mdl.seller.seller_id == update.seller_id
             ).first()
 
             if seller is None:
@@ -112,16 +121,16 @@ def update_product(prod_id: int, prod_name: str = None,price: float = None,selle
                     detail="Seller is blocked"
                 )
 
-            product.seller_id = seller_id
+            product.seller_id = update.seller_id
 
         db.commit()
         db.refresh(product)
 
-        return {
-            "message": "Product updated successfully",
-            "product": product
-        }
-
+        return mdl.ProductOut(
+            message="Product updated successfully",
+            prod_id=product.prod_id
+        )
+    
     except HTTPException:
         db.rollback()
         raise

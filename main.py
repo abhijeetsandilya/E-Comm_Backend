@@ -4,6 +4,7 @@ from database import engine, sessionLocal
 import database_model as db_mdl
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+import model as mdl
 
 db_mdl.Base.metadata.create_all(bind=engine)
 
@@ -21,6 +22,7 @@ def get_db():
 async def home(db: Session = Depends(get_db)):
 
     products = db.query(db_mdl.product).all()
+
     return products
 
 
@@ -34,38 +36,38 @@ async def product(prod_id: int, db: Session = Depends(get_db)):
 
     return product_req
 
-@app.patch("/cart/{prod_id}", status_code=201)
-async def add_to_cart(prod_id: int, quantity: int, user_id: int, db: Session = Depends(get_db)):
+@app.patch("/cart", status_code=201)
+async def add_to_cart(item: mdl.CartAdd, db: Session = Depends(get_db)):
     try:
-        if quantity <= 0:
+        if item.quantity <= 0:
             raise HTTPException(
                 status_code=400,
                 detail="Quantity must be greater than 0"
             )
 
-        product = db.query(db_mdl.product).filter(db_mdl.product.prod_id == prod_id).first()
+        product = db.query(db_mdl.product).filter(db_mdl.product.prod_id == item.prod_id).first()
 
         if product is None:
             raise HTTPException(status_code=404,detail="Product not found")    
         
-        item = db.query(db_mdl.CartItem).filter(db_mdl.CartItem.prod_id == prod_id, db_mdl.CartItem.user_id == user_id).all()
+        existing_item = db.query(db_mdl.CartItem).filter(db_mdl.CartItem.prod_id == item.prod_id, db_mdl.CartItem.user_id == item.user_id).first()
 
-        if item is None:
-            new_item = db_mdl.CartItem(prod_id = prod_id, quantity = quantity, user_id = user_id)
+        if existing_item is None:
+            new_item = db_mdl.CartItem(prod_id = item.prod_id, quantity = item.quantity, user_id = item.user_id)
 
             db.add(new_item)
             db.commit()
             db.refresh(new_item)
 
-            return new_item
+            return mdl.CartItemOut(message="Item added to cart", prod_id=new_item.prod_id, cart_id=new_item.cart_id)
         
-        item.quantity += quantity
+        existing_item.quantity += item.quantity
 
         db.commit()
-        db.refresh(item)
+        db.refresh(existing_item)
 
-        return item
-    
+        return mdl.CartItemOut(message="Item quantity updated", prod_id=existing_item.prod_id, cart_id=existing_item.cart_id)
+
     except HTTPException:
         db.rollback()
         raise
@@ -110,21 +112,21 @@ async def remove_from_cart(prod_id: int, user_id: int, db: Session = Depends(get
 async def view_cart(user_id: int, db: Session = Depends(get_db)):
     cart = db.query(db_mdl.cart).filter(db_mdl.cart.user_id == user_id).all()
 
-    return cart
+    return mdl.CartResponse(message="Cart retrieved successfully", cart=cart)
 
-@app.post("/order", status_code=201)
-async def buy(prod_id: int, quantity: int, user_id: int, address_id: int, db: Session = Depends(get_db)):
+@app.post("/order", status_code=201, response_model=mdl.OrderResponse)
+async def buy(order: mdl.OrderCreate, db: Session = Depends(get_db)):
 
-    if quantity <= 0:
+    if order.quantity <= 0:
         raise HTTPException(status_code=400,detail="Quantity must be greater than 0")
     
     try:
-        product = db.query(db_mdl.product).filter(db_mdl.product.prod_id == prod_id).with_for_update().first()
+        product = db.query(db_mdl.product).filter(db_mdl.product.prod_id == order.prod_id).with_for_update().first()
 
-        address = (db.query(db_mdl.address).filter(db_mdl.address.address_id == address_id,db_mdl.address.user_id == user_id).first())
+        address = (db.query(db_mdl.address).filter(db_mdl.address.address_id == order.address_id,db_mdl.address.user_id == order.user_id).first())
 
         user = db.query(db_mdl.user).filter(
-        db_mdl.user.user_id == user_id).first()
+        db_mdl.user.user_id == order.user_id).first()
 
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
@@ -135,10 +137,10 @@ async def buy(prod_id: int, quantity: int, user_id: int, address_id: int, db: Se
         if product is None:
             raise HTTPException(status_code=404,detail="Product not found")
 
-        if quantity > product.stock:
+        if order.quantity > product.stock:
             raise HTTPException(status_code=409, detail="Requested quantity exceeds available stock :( ")
 
-        new_order = db_mdl.order(user_id = user_id, total_price = product.Current_price * quantity,
+        new_order = db_mdl.order(user_id = order.user_id, total_price = product.current_price * order.quantity,
                                 order_status="Pending",ordered_at=datetime.now(UTC))
         
         db.add(new_order)
@@ -161,25 +163,23 @@ async def buy(prod_id: int, quantity: int, user_id: int, address_id: int, db: Se
 
         new_item = db_mdl.orderItem(
             order_id=new_order.order_id,
-            user_id=user_id,
-            prod_id=prod_id,
-            quantity=quantity,
-            price=product.Current_price
+            user_id=order.user_id,
+            prod_id=order.prod_id,
+            quantity=order.quantity,
+            price=product.current_price
         )
 
         db.add(new_item)
 
-        product.stock -= quantity
+        product.stock -= order.quantity
 
         db.commit()
 
         db.refresh(new_order)
         db.refresh(new_item)
 
-        return {
-        "message": "Order placed successfully",
-        "order_id": new_order.order_id, "total_price": new_order.total_price
-    }
+        return mdl.OrderResponse(message="Order placed successfully", order_id=new_order.order_id, total_price=new_order.total_price)
+    
     except HTTPException:
         db.rollback()
         raise
@@ -192,7 +192,7 @@ async def buy(prod_id: int, quantity: int, user_id: int, address_id: int, db: Se
         )
 
 @app.get("/order", status_code=200)
-async def order_list(user_id: int,db: Session = Depends(get_db)):
+async def order_list(user_id: int, db: Session = Depends(get_db)):
     orders = db.query(db_mdl.order).filter(db_mdl.order.user_id == user_id).all()
     
     return orders
@@ -271,113 +271,96 @@ async def get_address(address_id : int, db: Session = Depends(get_db)):
 
     return add
 
-@app.post("/addresses", status_code=201)
+@app.post("/addresses", status_code=201, response_model=mdl.AddressOut)
 def create_address(
-    user_id: int,
-    name: str,
-    phone: str,
-    city: str,
-    state: str,
-    pincode: str,
-    address_line1: str,
-    address_line2: str | None = None,
-    is_default: bool = False,        #default parameters are placed at the end, after the non-default parameters
+    address: mdl.AddressCreate,       
     db: Session = Depends(get_db)
 ):
 
     user = db.query(db_mdl.user).filter(
-        db_mdl.user.user_id == user_id
+        db_mdl.user.user_id == address.user_id
     ).first()
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if is_default:
+    if address.is_default:
         db.query(db_mdl.address).filter(
-            db_mdl.address.user_id == user_id,
+            db_mdl.address.user_id == address.user_id,
             db_mdl.address.is_default == True
         ).update({"is_default": False})
 
     new_address = db_mdl.address(
-        user_id=user_id,
-        name=name,
-        phone=phone,
-        address_line1=address_line1,
-        address_line2=address_line2,
-        city=city,
-        state=state,
-        pincode=pincode,
-        is_default=is_default
+        user_id=address.user_id,
+        name=address.name,
+        phone=address.phone,
+        address_line1=address.address_line1,
+        address_line2=address.address_line2,
+        city=address.city,
+        state=address.state,
+        pincode=address.pincode,
+        is_default=address.is_default
     )
 
     db.add(new_address)
     db.commit()
     db.refresh(new_address)
 
-    return new_address
+    return mdl.AddressOut(message="Address created successfully", address_id=new_address.address_id)
 
 @app.patch("/addresses/{address_id}")
 def update_address(
     address_id: int,
-    user_id: int,
-    name: str | None = None,
-    phone: str | None = None,
-    address_line1: str | None = None,
-    address_line2: str | None = None,
-    landmark: str | None = None,
-    city: str | None = None,
-    state: str | None = None,
-    pincode: str | None = None,
-    is_default: bool | None = None,
+    address_update: mdl.AddressUpdate,
     db: Session = Depends(get_db)
 ):
 
     address = db.query(db_mdl.address).filter(
         db_mdl.address.address_id == address_id,
-        db_mdl.address.user_id == user_id
+        db_mdl.address.user_id == address_update.user_id
     ).first()
 
     if not address:
         raise HTTPException(status_code=404, detail="Address not found")
 
-    if name is not None:
-        address.name = name
+    if address_update.name is not None:
+        address.name = address_update.name
 
-    if phone is not None:
-        address.phone = phone
+    if address_update.phone is not None:
+        address.phone = address_update.phone
 
-    if address_line1 is not None:
-        address.address_line1 = address_line1
+    if address_update.address_line1 is not None:
+        address.address_line1 = address_update.address_line1
 
-    if address_line2 is not None:
-        address.address_line2 = address_line2
+    if address_update.address_line2 is not None:
+        address.address_line2 = address_update.address_line2
 
-    if landmark is not None:
-        address.landmark = landmark
+    if address_update.landmark is not None:
+        address.landmark = address_update.landmark
 
-    if city is not None:
-        address.city = city
+    if address_update.city is not None:
+        address.city = address_update.city
 
-    if state is not None:
-        address.state = state
+    if address_update.state is not None:
+        address.state = address_update.state
 
-    if pincode is not None:
-        address.pincode = pincode
+    if address_update.pincode is not None:
+        address.pincode = address_update.pincode
 
-    if is_default is not None:
+    if address_update.is_default is not None:
 
-        if is_default:
+        if address_update.is_default:
             db.query(db_mdl.address).filter(
-                db_mdl.address.user_id == user_id,
+                db_mdl.address.user_id == address_update.user_id,
                 db_mdl.address.address_id != address_id
             ).update({"is_default": False})
 
-        address.is_default = is_default
+        address.is_default = address_update.is_default
 
     db.commit()
     db.refresh(address)
 
-    return address
+    return mdl.AddressOut(message="Address updated successfully", address_id=address.address_id)
 
 @app.delete("/addresses/{address_id}", status_code=204)
 def delete_address(
